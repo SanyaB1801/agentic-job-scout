@@ -1,4 +1,4 @@
-# Career Copilot - Real-Time Job Matching Agent
+# Career Copilot - the Agentic Job Scout
 
 A LangGraph + Chroma powered agent that continuously ingests job postings,
 scores them against your resume, and proactively alerts you on strong fits.
