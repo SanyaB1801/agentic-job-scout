@@ -1,0 +1,53 @@
+# Sanya Behera - resume source of truth for the Career Copilot agent.
+# Lines starting with "# " are ignored. "## " = section, "### " = one entry (becomes one searchable chunk).
+# The agent may ONLY claim what is written here, so keep this in sync with your real resume.
+# Tip: when you finish new projects (e.g. this one!), add them under PROJECTS and re-run:  python -m agent.resume_index
+
+## EXPERIENCE
+### Automation and AI Implementation Intern - Avaya (Feb 2026 - Present)
+- Engineered partitioned data models & 28 custom SQL views in BigQuery across a 193M+ row enterprise HR dataset, utilizing complex window functions to resolve multi-year data discrepancies.
+- Built a real-time FastAPI backend powered by Google ADK and Gemini API, deploying a live-connected data agent that processes 15-minute scheduled API refreshes to deliver zero-latency executive analytics.
+- Automated 81% of recurring operational HR reporting using Google Apps Script & custom APIs, saving 35+ FTE hours monthly and replicating 5 core enterprise reports.
+
+### AI Engineer Intern - Revv Growth (Jul 2025 - Sep 2025)
+- Designed and deployed 10+ automated AI workflows using Make, n8n, Gemini API, and custom webhooks for cross-functional teams (Sales, Marketing, SEO, PPC, and Content).
+- Reduced business proposal generation time from 10+ hours to 10 minutes, boosting team operational throughput by 85% while maintaining 98% accuracy across client deliverables.
+
+### Summer Intern - IIT Guwahati (Jul 2024 - Aug 2024)
+- Developed and deployed a Streamlit-based Phishing Email Detector using ML and NLP, achieving 95%+ accuracy on a dataset of 10,000+ emails.
+
+## PROJECTS
+### MeetBot: AI Meeting Agent (Oct 2025) | Python, Flask, React, Google Gemini, Groq Whisper, Vexa.ai
+- Engineered an autonomous agent using Vexa.ai to join live calls, reducing transcription latency by 60% via Groq Whisper integration.
+- Automated post-meeting workflows with Google Gemini, extracting tasks and summaries to cut administrative documentation time by 90%.
+
+### SEO Intelligence Tool (Jul 2025) | Python, Streamlit, NLP (KeyBERT, spaCy), Tesseract OCR, Hugging Face
+- Built a full-stack app to extract SEO insights from articles and multiple file types using NLP and OCR.
+- Automated keyword extraction and meta generation, reducing manual SEO analysis time by 70%.
+
+### Automated Grading System in Python (Apr 2024) | Python, SQL, BERT
+- Developed a Streamlit app that automated grading with a PyTorch BERT model, reducing manual effort by 70% and improving accuracy by 15%, while using K-means clustering to analyze 200+ responses and cosine similarity for grading consistency.
+
+## SKILLS
+### Languages and Frameworks
+Python, Java, C, Dart, SQL, HTML, CSS, JavaScript, React
+### Libraries
+TensorFlow, PyTorch, Scikit-learn, Pandas, NumPy, Matplotlib, Seaborn, NLTK, SpaCy, FinBERT, Transformers, OpenCV, Pillow (PIL), Regex, Google Gemini AI
+### Automation tools
+Make, n8n, Voiceflow, Mindpal
+### UI/UX
+Figma, Tkinter, Streamlit
+
+## EDUCATION
+### B.Tech. in Artificial Intelligence and Machine Learning - Vivekananda Institute of Professional Studies - Technical Campus (2022-2026)
+CGPA 8.8
+
+## CERTIFICATIONS
+### IBM SkillsBuild - Unleashing the Power of AI Agents
+Explored the fundamentals and applications of AI agents, including their use in automation, natural language understanding, and decision-making systems.
+
+## RESEARCH
+### Magnetocaloric Effect: Fundamentals, Materials and Applications - IC-AMSI 2024
+Presented at IC-AMSI 2024, focusing on refrigeration and energy conversion.
+### Gesture Controlled Wheelchair Powered by Solar Energy - EAIC 2025
+Published at EAIC 2025, detailing a solar-powered, gesture-controlled wheelchair for the differently-abled.
