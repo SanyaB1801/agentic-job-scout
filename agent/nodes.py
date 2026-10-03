@@ -25,6 +25,12 @@ class FitAssessment(BaseModel):
     )
     top_gap: str = Field(description="The single most important gap, or 'None'")
     reasoning: str = Field(description="At most 60 words explaining the score")
+    seniority: str = Field(
+        description="Seniority the POSTING is written for: one of Entry, Mid, Senior, Lead+, Unknown"
+    )
+    tech_stack: list[str] = Field(
+        description="Concrete tools/technologies/languages the posting explicitly names (not soft skills)"
+    )
 
 
 class PitchDraft(BaseModel):
@@ -85,6 +91,8 @@ Rules:
 - Candidate context: 2026 B.Tech (AI & ML) graduate with about one year of internships. Best suited to entry-level up to ~2 years of experience. Penalize postings that require 4+ years or are unrelated to AI/ML, data or automation engineering.
 - Score guide: 85-100 excellent fit, 70-84 good fit, 40-69 partial fit, below 40 poor fit.
 - matched_skills / missing_skills: only list things the posting actually asks for.
+- seniority: classify the POSTING (not the candidate) as Entry, Mid, Senior, Lead+, or Unknown.
+- tech_stack: list concrete tools/technologies/languages the posting explicitly names. Nothing inferred.
 - Keep reasoning under 60 words."""
 
 PITCH_SYSTEM = """You write short, honest application pitches for a candidate.
