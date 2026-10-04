@@ -1,12 +1,9 @@
-requests>=2.31.0
-python-dotenv>=1.0.0
-chromadb>=0.5.0
-sentence-transformers>=2.7.0
-apscheduler>=3.10.4
-pydantic>=2.6.0
-langgraph>=0.2.0
-langchain-core>=0.3.0
-langchain-google-genai>=2.0.0
+# Lean dependencies for the dashboard (app.py) only - this is what Vercel deploys.
+# Heavy ML/ingestion packages live in requirements-pipeline.txt instead, since
+# the dashboard never imports chromadb, torch, or langgraph - keeping this file
+# small is what keeps the deployment under Vercel's 500 MB bundle limit.
 fastapi>=0.110.0
 uvicorn>=0.29.0
 psycopg2-binary>=2.9.9
+pydantic>=2.6.0
+python-dotenv>=1.0.0
