@@ -40,6 +40,23 @@ CREATE TABLE IF NOT EXISTS matches (
 )
 """
 
+RAW_POSTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS job_postings (
+    posting_id TEXT PRIMARY KEY,
+    title TEXT,
+    company TEXT,
+    location TEXT,
+    source TEXT,
+    url TEXT,
+    description TEXT,
+    salary TEXT,
+    posted_date TEXT,
+    scraped_at TEXT,
+    embedding TEXT,
+    created_at TEXT
+)
+"""
+
 # Added via ALTER TABLE ADD COLUMN IF NOT EXISTS so an older matches table
 # (from before these fields existed) upgrades in place with no data loss.
 NEW_COLUMNS = {
@@ -75,6 +92,7 @@ def _db():
     try:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
+            cur.execute(RAW_POSTINGS_SCHEMA)
             for col, decl in NEW_COLUMNS.items():
                 cur.execute(f"ALTER TABLE matches ADD COLUMN IF NOT EXISTS {col} {decl}")
         yield conn
@@ -90,6 +108,81 @@ def scored_ids() -> set[str]:
     with _db() as conn, conn.cursor() as cur:
         cur.execute("SELECT posting_id FROM matches")
         return {r["posting_id"] for r in cur.fetchall()}
+
+
+def known_posting_ids() -> set[str]:
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute("SELECT posting_id FROM job_postings")
+        return {r["posting_id"] for r in cur.fetchall()}
+
+
+def save_raw_posting(posting: dict) -> None:
+    """Persist raw job postings directly in Neon so the workflow is not dependent on Chroma."""
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO job_postings (
+                posting_id, title, company, location, source, url,
+                description, salary, posted_date, scraped_at, embedding, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (posting_id) DO UPDATE SET
+                title=EXCLUDED.title,
+                company=EXCLUDED.company,
+                location=EXCLUDED.location,
+                source=EXCLUDED.source,
+                url=EXCLUDED.url,
+                description=EXCLUDED.description,
+                salary=EXCLUDED.salary,
+                posted_date=EXCLUDED.posted_date,
+                scraped_at=EXCLUDED.scraped_at,
+                embedding=EXCLUDED.embedding,
+                created_at=EXCLUDED.created_at
+            """,
+            (
+                posting["posting_id"],
+                posting.get("title"),
+                posting.get("company"),
+                posting.get("location"),
+                posting.get("source"),
+                posting.get("url"),
+                posting.get("description"),
+                posting.get("salary"),
+                posting.get("posted_date"),
+                posting.get("scraped_at"),
+                json.dumps(posting.get("embedding") or []),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+
+
+def list_raw_postings(limit: int | None = None, min_score: int = 0) -> list[dict]:
+    """Fetch postings stored in Neon, excluding ones already scored in matches."""
+    query = """
+        SELECT jp.*
+        FROM job_postings jp
+        LEFT JOIN matches m ON m.posting_id = jp.posting_id
+        WHERE m.posting_id IS NULL
+    """
+    params: list = []
+    if min_score > 0:
+        query += " AND m.score >= %s"
+        params.append(min_score)
+    query += " ORDER BY jp.created_at DESC"
+    if limit is not None:
+        query += " LIMIT %s"
+        params.append(limit)
+
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["embedding"] = json.loads(d.get("embedding") or "[]")
+        out.append(d)
+    return out
 
 
 def save_result(state: dict) -> None:
