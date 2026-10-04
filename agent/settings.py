@@ -17,7 +17,12 @@ REVIEW_THRESHOLD = int(os.getenv("REVIEW_THRESHOLD", "40"))  # >= this: keep for
 
 # --- Files ---
 RESUME_PATH = os.getenv("RESUME_PATH", "./data/resume.txt")
-MATCHES_DB_PATH = os.getenv("MATCHES_DB_PATH", "./data/matches.db")
+MATCHES_DB_PATH = os.getenv("MATCHES_DB_PATH", "./data/matches.db")  # legacy SQLite path, used only by the migration script
+
+# --- Hosted database (Neon Postgres) ---
+# Use the POOLED connection string from your Neon project (hostname contains "-pooler"),
+# since serverless hosts (Vercel) open many short-lived connections.
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # --- Retrieval ---
 RESUME_COLLECTION = "resume_chunks"

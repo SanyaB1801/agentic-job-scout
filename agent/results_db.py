@@ -1,17 +1,27 @@
 """
-SQLite store for scored postings. Two kinds of fields live here:
+Postgres-backed store for scored postings (hosted on Neon, free tier).
 
+This is a drop-in replacement for the original SQLite version: every public
+function has the exact same name and signature, so app.py and
+score_postings.py did not need to change at all.
+
+Two kinds of fields live here:
   - AGENT fields (score, decision, seniority, tech_stack, ...) - overwritten
     every time a posting is (re)scored.
   - USER fields (status, notes) - your own application tracking. Rescoring
     NEVER touches these, so re-running the agent won't wipe out that you
     marked something "Applied".
+
+Requires DATABASE_URL in .env - the POOLED connection string from your Neon
+project (hostname contains "-pooler"), since serverless hosts open many
+short-lived connections.
 """
 import json
-import os
-import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+
+import psycopg2
+import psycopg2.extras
 
 from agent import settings
 from agent.salary import parse_salary
@@ -23,12 +33,15 @@ CREATE TABLE IF NOT EXISTS matches (
     score INTEGER, decision TEXT,
     matched_skills TEXT, missing_skills TEXT, top_gap TEXT, reasoning TEXT,
     pitch TEXT, suggested_bullets TEXT,
+    seniority TEXT, tech_stack TEXT,
+    salary_min INTEGER, salary_max INTEGER,
+    status TEXT DEFAULT 'new', notes TEXT, status_updated_at TEXT,
     scored_at TEXT
 )
 """
 
-# Columns added after the original schema. Each is added via ALTER TABLE if
-# missing, so existing matches.db files upgrade in place with no data loss.
+# Added via ALTER TABLE ADD COLUMN IF NOT EXISTS so an older matches table
+# (from before these fields existed) upgrades in place with no data loss.
 NEW_COLUMNS = {
     "seniority": "TEXT",
     "tech_stack": "TEXT",
@@ -44,16 +57,14 @@ STATUSES = ["new", "applied", "interviewing", "offer", "rejected", "not_interest
 
 @contextmanager
 def _db():
-    path = os.path.abspath(settings.MATCHES_DB_PATH)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    if not settings.DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set. Add your Neon pooled connection string to .env.")
+    conn = psycopg2.connect(settings.DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        conn.execute(SCHEMA)
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(matches)")}
-        for col, decl in NEW_COLUMNS.items():
-            if col not in existing:
-                conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {decl}")
+        with conn.cursor() as cur:
+            cur.execute(SCHEMA)
+            for col, decl in NEW_COLUMNS.items():
+                cur.execute(f"ALTER TABLE matches ADD COLUMN IF NOT EXISTS {col} {decl}")
         yield conn
         conn.commit()
     finally:
@@ -61,8 +72,9 @@ def _db():
 
 
 def scored_ids() -> set[str]:
-    with _db() as conn:
-        return {r["posting_id"] for r in conn.execute("SELECT posting_id FROM matches")}
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute("SELECT posting_id FROM matches")
+        return {r["posting_id"] for r in cur.fetchall()}
 
 
 def save_result(state: dict) -> None:
@@ -72,22 +84,22 @@ def save_result(state: dict) -> None:
     a = state.get("assessment", {})
     smin, smax = parse_salary(p.get("salary"))
 
-    with _db() as conn:
-        conn.execute(
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute(
             """
             INSERT INTO matches (posting_id, title, company, location, source, url,
                                  score, decision, matched_skills, missing_skills,
                                  top_gap, reasoning, pitch, suggested_bullets,
                                  seniority, tech_stack, salary_min, salary_max, scored_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(posting_id) DO UPDATE SET
-                score=excluded.score, decision=excluded.decision,
-                matched_skills=excluded.matched_skills, missing_skills=excluded.missing_skills,
-                top_gap=excluded.top_gap, reasoning=excluded.reasoning,
-                pitch=excluded.pitch, suggested_bullets=excluded.suggested_bullets,
-                seniority=excluded.seniority, tech_stack=excluded.tech_stack,
-                salary_min=excluded.salary_min, salary_max=excluded.salary_max,
-                scored_at=excluded.scored_at
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (posting_id) DO UPDATE SET
+                score=EXCLUDED.score, decision=EXCLUDED.decision,
+                matched_skills=EXCLUDED.matched_skills, missing_skills=EXCLUDED.missing_skills,
+                top_gap=EXCLUDED.top_gap, reasoning=EXCLUDED.reasoning,
+                pitch=EXCLUDED.pitch, suggested_bullets=EXCLUDED.suggested_bullets,
+                seniority=EXCLUDED.seniority, tech_stack=EXCLUDED.tech_stack,
+                salary_min=EXCLUDED.salary_min, salary_max=EXCLUDED.salary_max,
+                scored_at=EXCLUDED.scored_at
             """,
             (
                 p["posting_id"], p.get("title"), p.get("company"), p.get("location"),
@@ -106,24 +118,22 @@ def save_result(state: dict) -> None:
 def set_status(posting_id: str, status: str | None = None, notes: str | None = None) -> None:
     if status is not None and status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}, got {status!r}")
-    with _db() as conn:
+    with _db() as conn, conn.cursor() as cur:
         if status is not None:
-            conn.execute(
-                "UPDATE matches SET status=?, status_updated_at=? WHERE posting_id=?",
+            cur.execute(
+                "UPDATE matches SET status=%s, status_updated_at=%s WHERE posting_id=%s",
                 (status, datetime.now(timezone.utc).isoformat(), posting_id),
             )
         if notes is not None:
-            conn.execute("UPDATE matches SET notes=? WHERE posting_id=?", (notes, posting_id))
+            cur.execute("UPDATE matches SET notes=%s WHERE posting_id=%s", (notes, posting_id))
 
 
 def counts() -> dict:
-    with _db() as conn:
-        decision_rows = conn.execute(
-            "SELECT decision, COUNT(*) AS n FROM matches GROUP BY decision"
-        ).fetchall()
-        status_rows = conn.execute(
-            "SELECT COALESCE(status, 'new') AS status, COUNT(*) AS n FROM matches GROUP BY status"
-        ).fetchall()
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute("SELECT decision, COUNT(*) AS n FROM matches GROUP BY decision")
+        decision_rows = cur.fetchall()
+        cur.execute("SELECT COALESCE(status, 'new') AS status, COUNT(*) AS n FROM matches GROUP BY status")
+        status_rows = cur.fetchall()
 
     decision_out = {"alert": 0, "review": 0, "discard": 0, "total": 0}
     for r in decision_rows:
@@ -149,46 +159,45 @@ def list_matches(
     search: str | None = None,
     order_by: str = "score",
 ) -> list[dict]:
-    query = "SELECT * FROM matches WHERE score >= ?"
+    query = "SELECT * FROM matches WHERE score >= %s"
     params: list = [min_score]
 
     if decision and decision != "all":
-        query += " AND decision = ?"
+        query += " AND decision = %s"
         params.append(decision)
 
     if status and status != "all":
-        query += " AND COALESCE(status, 'new') = ?"
+        query += " AND COALESCE(status, 'new') = %s"
         params.append(status)
 
     if seniority and seniority != "all":
-        query += " AND seniority = ?"
+        query += " AND seniority = %s"
         params.append(seniority)
 
     if tech:
-        query += " AND tech_stack LIKE ?"
+        query += " AND tech_stack ILIKE %s"
         params.append(f"%{tech}%")
 
     if salary_min is not None:
-        # posting's upper band must at least reach what you're asking for
-        query += " AND (salary_max IS NULL OR salary_max >= ?)"
+        query += " AND (salary_max IS NULL OR salary_max >= %s)"
         params.append(salary_min)
 
     if salary_max is not None:
-        # posting's lower band must not exceed your ceiling
-        query += " AND (salary_min IS NULL OR salary_min <= ?)"
+        query += " AND (salary_min IS NULL OR salary_min <= %s)"
         params.append(salary_max)
 
     if search:
-        query += " AND (title LIKE ? OR company LIKE ?)"
+        query += " AND (title ILIKE %s OR company ILIKE %s)"
         like = f"%{search}%"
         params += [like, like]
 
-    order_col = "salary_max DESC" if order_by == "salary" else "score DESC"
-    query += f" ORDER BY {order_col} LIMIT ?"
+    order_col = "salary_max DESC NULLS LAST" if order_by == "salary" else "score DESC"
+    query += f" ORDER BY {order_col} LIMIT %s"
     params.append(limit)
 
-    with _db() as conn:
-        rows = conn.execute(query, params).fetchall()
+    with _db() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
 
     out = []
     for r in rows:
