@@ -55,11 +55,23 @@ NEW_COLUMNS = {
 STATUSES = ["new", "applied", "interviewing", "offer", "rejected", "not_interested"]
 
 
+def _normalize_database_url(url: str) -> str:
+    """Ensure Neon connections include sslmode=require when not already present."""
+    if not url:
+        return url
+    if "sslmode=" not in url.lower():
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}sslmode=require"
+    return url
+
+
 @contextmanager
 def _db():
     if not settings.DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set. Add your Neon pooled connection string to .env.")
-    conn = psycopg2.connect(settings.DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+
+    db_url = _normalize_database_url(settings.DATABASE_URL)
+    conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         with conn.cursor() as cur:
             cur.execute(SCHEMA)
@@ -67,6 +79,9 @@ def _db():
                 cur.execute(f"ALTER TABLE matches ADD COLUMN IF NOT EXISTS {col} {decl}")
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -113,6 +128,7 @@ def save_result(state: dict) -> None:
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
+        conn.commit()
 
 
 def set_status(posting_id: str, status: str | None = None, notes: str | None = None) -> None:
@@ -126,6 +142,7 @@ def set_status(posting_id: str, status: str | None = None, notes: str | None = N
             )
         if notes is not None:
             cur.execute("UPDATE matches SET notes=%s WHERE posting_id=%s", (notes, posting_id))
+        conn.commit()
 
 
 def counts() -> dict:
